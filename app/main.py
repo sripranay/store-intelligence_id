@@ -1,13 +1,22 @@
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI
 from pydantic import BaseModel
-from typing import List
-import json
-import os
+from typing import List, Optional
+import random
+from datetime import datetime
 
 app = FastAPI()
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+# ---------------- DB ----------------
 events_db = []
 
+# ---------------- MODEL ----------------
 class Event(BaseModel):
     event_id: str
     store_id: str
@@ -15,71 +24,80 @@ class Event(BaseModel):
     visitor_id: str
     event_type: str
     timestamp: str
-    zone_id: str | None
-    dwell_ms: int
-    is_staff: bool
-    confidence: float
-    metadata: dict
+    zone_id: Optional[str] = None
+    dwell_ms: int = 0
+    is_staff: bool = False
+    confidence: float = 0.9
+    metadata: dict = {}
 
-# -----------------------------
-# LOAD EVENTS
-# -----------------------------
-def load_events_from_file():
-    file_path = os.path.join(os.path.dirname(__file__), "..", "pipeline", "events.jsonl")
+# ---------------- ROOT ----------------
+@app.get("/")
+def root():
+    return {"message": "Store Intelligence API running"}
 
-    if not os.path.exists(file_path):
-        print("⚠ events.jsonl not found")
-        return
-
-    with open(file_path, "r") as f:
-        for line in f:
-            try:
-                event = json.loads(line.strip())
-                events_db.append(event)
-            except:
-                pass
-
-    print(f"✅ Loaded {len(events_db)} events from file")
-
-@app.on_event("startup")
-def startup_event():
-    load_events_from_file()
-
-# -----------------------------
-# INGEST
-# -----------------------------
+# ---------------- INGEST ----------------
 @app.post("/events/ingest")
-def ingest_events(events: List[Event]):
-    for event in events:
-        events_db.append(event.dict())
+def ingest(events: List[Event]):
+    for e in events:
+        events_db.append(e.dict())
+    return {"status": "ok", "count": len(events)}
 
-    return {"status": "success", "count": len(events)}
-
-# -----------------------------
-# METRICS
-# -----------------------------
+# ---------------- METRICS ----------------
 @app.get("/stores/{store_id}/metrics")
-def get_metrics(store_id: str):
+def metrics(store_id: str):
+    entries = 0
     visitors = set()
-    entry_count = 0
+    dwell_total = 0
 
     for e in events_db:
         if e["store_id"] == store_id:
             if e["event_type"] == "ENTRY":
-                entry_count += 1
+                entries += 1
                 visitors.add(e["visitor_id"])
+            if e["event_type"] == "DWELL":
+                dwell_total += e["dwell_ms"]
+
+    avg_dwell = dwell_total / entries if entries else 0
 
     return {
         "store_id": store_id,
-        "total_entries": entry_count,
+        "entries": entries,
         "unique_visitors": len(visitors),
-        "conversion_rate": 0
+        "avg_dwell_ms": int(avg_dwell)
     }
 
-# -----------------------------
-# RUN
-# -----------------------------
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port)
+# ---------------- HEATMAP ----------------
+@app.get("/stores/{store_id}/heatmap")
+def heatmap(store_id: str):
+    zone_count = {}
+
+    for e in events_db:
+        if e["store_id"] == store_id and e["zone_id"]:
+            zone = e["zone_id"]
+            zone_count[zone] = zone_count.get(zone, 0) + 1
+
+    return zone_count
+
+# ---------------- DUMMY DATA ----------------
+@app.get("/generate-dummy")
+def generate_dummy():
+    stores = ["STORE_001", "STORE_002"]
+
+    for i in range(100):
+        store = random.choice(stores)
+        event = {
+            "event_id": str(i),
+            "store_id": store,
+            "camera_id": "CAM_1",
+            "visitor_id": f"VIS_{random.randint(1,20)}",
+            "event_type": random.choice(["ENTRY", "DWELL"]),
+            "timestamp": datetime.utcnow().isoformat(),
+            "zone_id": random.choice(["RACK_1", "RACK_2", "RACK_3", "RACK_4"]),
+            "dwell_ms": random.randint(1000, 5000),
+            "is_staff": False,
+            "confidence": 0.9,
+            "metadata": {}
+        }
+        events_db.append(event)
+
+    return {"status": "dummy data added", "count": len(events_db)}

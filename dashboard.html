@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Store Dashboard</title>
+</head>
+<body>
+
+<h2>Store Dashboard</h2>
+
+<button onclick="loadData()">Load Data</button>
+
+<h3>Metrics</h3>
+<pre id="metrics"></pre>
+
+<h3>Heatmap</h3>
+<pre id="heatmap"></pre>
+
+<script>
+async function loadData() {
+
+    // generate dummy first
+    await fetch("http://127.0.0.1:8000/generate-dummy");
+
+    // metrics
+    const m = await fetch("http://127.0.0.1:8000/stores/STORE_001/metrics");
+    const metrics = await m.json();
+
+    // heatmap
+    const h = await fetch("http://127.0.0.1:8000/stores/STORE_001/heatmap");
+    const heatmap = await h.json();
+
+    document.getElementById("metrics").innerText = JSON.stringify(metrics, null, 2);
+    document.getElementById("heatmap").innerText = JSON.stringify(heatmap, null, 2);
+}
+</script>
+
+</body>
+</html>

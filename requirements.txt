@@ -1,5 +1,6 @@
 fastapi
 uvicorn
-ultralytics
-opencv-python
-deep-sort-realtime
+requests
+streamlit
+pandas
+pydantic
